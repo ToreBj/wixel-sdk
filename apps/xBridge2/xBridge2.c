@@ -92,7 +92,7 @@ elsewhere.  This small bridge rig should be kept nearby the T1D at all times.
 #include <uart1.h>
 
 //define the xBridge Version
-#define VERSION ("2.40")
+#define VERSION ("2.41")
 //define the FLASH_TX_ID address.  This is the address we store the Dexcom TX ID number in.
 //#define FLASH_TX_ID		(0x77F8)
 //define the DEXBRIDGE_FLAGS address.  This is the address we store the xBridge flags in.
@@ -898,19 +898,23 @@ void switchToRCOSC(void)
 
 uint32 calcSleep(uint16 seconds) {
 	uint32 diff = 0;
-	XDATA uint32 now = 0;
+	//XDATA uint32 now = 0;
+	XDATA uint32 less = 0;
 	diff = seconds;
 //	printf_fast("\r\ndiff: %lu\r\n", diff);
 	diff = diff * 1000;
-	now = diff;
+	//now = diff;
 	//printf_fast("\r\ndiff * 1000: %lu\r\n", diff);
-	diff = diff - (getMs() - pkt_time);
+	less = getMs() - pkt_time;
+	if ( less > 300000 )
+		less -= 4294967295;
+	diff = diff - less;
 //	printf_fast("\r\ndiff - getMs-pkt_time: %lu\r\n", diff);
 //	diff = diff/1000;
 //	while(diff>seconds)
 //		diff-= 300;
-	while(diff > now)
-		diff = diff - now;
+/*	while(diff > now)
+		diff = diff - now; */
 //	printf_fast("\r\ndiff: %lu\r\n", diff);
 	return diff;
 }
@@ -920,7 +924,9 @@ void goToSleep (uint16 seconds) {
 	//uint16 sleep_time = 0;
 	unsigned short sleep_time = 0;
 	uint32 sleep_time_ms = 0;
+	XDATA uint32 sleep_start_ms = 0;
 	XDATA uint32 addendum = 0;
+	XDATA uint32 now = 0;
 	//uint32 diff = 0;
 	//uint32 now = 0;
 	//initialise sleep library
@@ -987,6 +993,7 @@ void goToSleep (uint16 seconds) {
 		IEN1 &= ~0x3F;
 		IEN2 &= ~0x3F;
 		
+		sleep_start_ms = getMs();
 		sleep_time_ms = calcSleep(seconds);
 		sleep_time = (unsigned short)(sleep_time_ms/1000);
 		//printf_fast("sleep_time: %u\r\n", sleep_time);
@@ -1032,7 +1039,12 @@ void goToSleep (uint16 seconds) {
 		// Switch back to high speed
 		boardClockInit();   
 		// add the time we were asleep to ms count
-		addMs(sleep_time_ms);
+		now = getMs();
+		if(sleep_start_ms > now) {
+			addMs( sleep_time_ms - ((now + 4294967295) - sleep_time_ms));
+		} else {
+			addMs(sleep_time_ms - (now - sleep_start_ms));
+		}
 
 	} else {
 		// set Sleep Timer to the lowest resolution (1 second)      
@@ -1092,7 +1104,11 @@ void goToSleep (uint16 seconds) {
 		// Switch back to high speed      
 		boardClockInit(); 
 		// add the time we were asleep to ms count
-		addMs(sleep_time_ms);
+		if(sleep_start_ms > now) {
+			addMs( sleep_time_ms - ((now + 4294967295) - sleep_time_ms));
+		} else {
+			addMs(sleep_time_ms - (now - sleep_start_ms));
+		}
 	}
 //	printf_fast("awake!  getMs is %lu\r\n", getMs());
 //	printf_fast("slept for %lu us, %u s \r\n", sleep_time_ms, sleep_time);
