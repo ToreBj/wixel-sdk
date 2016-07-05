@@ -211,6 +211,29 @@ typedef struct _command_buff
 //create a static command structure to use.
 static t_command_buff command_buff;
 
+// macro to wait a specified number of milliseconds, whilst processing services.
+#define waitDoingServicesInterruptible(wait_time, break_flag, bProtocolServices) \
+  do { \
+	XDATA uint32 start_wait; \
+	start_wait = getMs(); \
+	while ((getMs() - start_wait) < wait_time) { \
+		doServices(bProtocolServices); \
+		if(break_flag) break; \
+		delayMs(20); \
+	} \
+  } while (0)
+
+// macro to wait a specified number of milliseconds, whilst processing services.
+#define waitDoingServices(wait_time, bProtocolServices) \
+  do { \
+	XDATA uint32 start_wait; \
+	start_wait = getMs(); \
+	while ((getMs() - start_wait) < wait_time) { \
+		doServices(bProtocolServices); \
+		delayMs(20); \
+	} \
+  } while (0)
+
 void setFlag(uint8 ptr, uint8 val)
 {
 	if(val)
@@ -832,20 +855,6 @@ void uartEnable() {
     U1CSR |= 0x40; // Recevier enable
 }
 
-// function to wait a specified number of milliseconds, whilst processing services.
-void waitDoingServices (uint32 wait_time, volatile BIT break_flag, BIT bProtocolServices ) {
-	XDATA uint32 start_wait;
-	start_wait = getMs();
-	while ((getMs() - start_wait) < wait_time) {
-		doServices(bProtocolServices);
-		if(break_flag) return;
-		delayMs(20);
-	}
-}
-
-
-
-
 /** Functions *****************************************************************/
 /* the functions that puts the system to sleep (PM2) and configures sleep timer to
 wake it again in 250 seconds.*/
@@ -1094,7 +1103,7 @@ void goToSleep (uint16 seconds) {
 		// interrupts are effectively blocked when reaching this code position.
 		// If the SLEEP.MODE bits have been cleared at this point, which means
 		// that an ISR has indeed executed in between the above NOPs, then the
-		// application will not enter PM{1 – 3} !
+		// application will not enter PM{1 - 3} !
    
 		if (SLEEP & 0x03) // SLEEP.MODE[1:0]
 		{
@@ -1214,7 +1223,7 @@ void send_data( uint8 *msg, uint8 len)
 	{
 		uart1TxSendByte(msg[i]);
 	}
-	while(uart1TxAvailable()<255) waitDoingServices(20,0,1);
+	while(uart1TxAvailable()<255) waitDoingServices(20,1);
 	if(usb_connected) {
 		if(send_debug)
 			printf_fast("Sending: ");
@@ -1223,7 +1232,7 @@ void send_data( uint8 *msg, uint8 len)
 		{
 			usbComTxSendByte(msg[i]);
 		}
-		while(usbComTxAvailable()<128) waitDoingServices(20,0,1);
+		while(usbComTxAvailable()<128) waitDoingServices(20,1);
 		if(send_debug)
 			printf_fast("\r\nResponse: ");
 	}
@@ -1282,13 +1291,13 @@ void configBt() {
 	delayMs(1000);
 */	length = sprintf(msg_buf, "AT+NAMExBridge%02x%02x", serialNumber[0],serialNumber[1]);
     send_data(msg_buf, length);
-	waitDoingServices(500,0,1);
+	waitDoingServices(500,1);
 /*	length = sprintf(msg_buf, "AT+RELI1");
     send_data(msg_buf, length);
 	waitDoingServices(500,0,1);	
 */	length = sprintf(msg_buf,"AT+RESET");
 	send_data(msg_buf,length);
-	waitDoingServices(5000,0,1);
+	waitDoingServices(5000,1);
     //uartDisable();
 }
 
@@ -1456,7 +1465,7 @@ void openUart()
 			settings.uart_baudrate = uart_baudrate[i];
 			uart1SetBaudRate(uart_baudrate[i]);
 			send_data(msg,sizeof(msg));
-			waitDoingServices(500,got_ok,1);
+			waitDoingServicesInterruptible(500,got_ok,1);
 			if(got_ok) break;
 		}
 		if(!got_ok){
@@ -1903,7 +1912,7 @@ void main()
 	//initialise Anlogue Input 0
 	P0INP = 0x1;
 	//delay for 30 seconds to get putty up.
-	waitDoingServices(10000,0,1);
+	waitDoingServices(10000,1);
 	printf_fast("Starting xBridge v%s\r\nRetrieving Settings\r\n", VERSION);
 	memcpy(&settings, (__xdata *)FLASH_SETTINGS, sizeof(settings));
 	//detect if we have xBridge or classic hardware
@@ -1921,7 +1930,7 @@ void main()
 		setFlag(XBRIDGE_HW,0);
 	}
 	//wait 1 seconds, just in case it needs to settle.
-	waitDoingServices(1000,0,0);
+	waitDoingServices(1000,0);
 	//initialise the command buffer
 	init_command_buff(&command_buff);
 	// Open the UART and set it up for comms to HM-10
@@ -1983,7 +1992,7 @@ void main()
 		sendBeacon();
 		doServices(0);
 		//wait 5 seconds
-		waitDoingServices(10000, dex_tx_id_set, 1);
+		waitDoingServicesInterruptible(10000, dex_tx_id_set, 1);
 	}
 	// if we still have settings to save (no TXID set), save them
 	if(save_settings)
@@ -2026,7 +2035,7 @@ void main()
 				if(send_debug)
 					printf_fast("%lu - packet waiting\r\n", getMs());
 				setDigitalOutput(10,HIGH);
-				waitDoingServices(1000, ble_connected,0);
+				waitDoingServicesInterruptible(1000, ble_connected,0);
 			}
 			if(ble_connected) {
 				//printf_fast("%lu - ble_connected: %u, sent_beacon: %u\r\n", getMs(), ble_connected, sent_beacon);
@@ -2045,7 +2054,7 @@ void main()
 			// wait 10 seconds, listenting for the ACK.
 			if(send_debug)
 				printf_fast("%lu - waiting for ack\r\n", getMs());
-			waitDoingServices(10000, 0, 1);
+			waitDoingServices(10000, 1);
 			
 			// if we got the ACK, get out of the loop.
 			// if we have sent a number of packets and still have not got an ACK, time to sleep.  We keep trying for up to 3 minutes.
@@ -2144,7 +2153,7 @@ void main()
 			ble_connected = 0;
 			//printf_fast("%lu - ble on\r\n", getMs());
 			setDigitalOutput(10,HIGH);
-			waitDoingServices(250,0,1);
+			waitDoingServices(250,1);
 		}
 	}
 }
